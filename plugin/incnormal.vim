@@ -1,8 +1,9 @@
 let g:s_state_save = []
-let g:active = v:false
+let g:s_active = v:false
 let g:s_buf = -1
 let g:s_win = -1
 let g:s_suspended = 0
+let g:s_cursors = []
 
 " fake exectue in an expr mapping, emulates #4419
 func! Fakexecute(cmd,unsandbox)
@@ -30,16 +31,23 @@ endfunction
 cnoremap <expr> <Plug>(incnormal-suspend) Fakexecute("let g:s_suspended = !g:s_suspended", 0)
 cmap <F4> <Plug>(incnormal-suspend)
 
+map <expr> <Plug>(incnormal-cursor) incnormal#cursor()
+map! <expr> <Plug>(incnormal-cursor) incnormal#cursor()
+
+func! incnormal#cursor()
+  call add(g:s_cursors, getpos('.'))
+  return ''
+endfunc
+
+" handy debug helper
+cnoremap <expr> <f5> Fakexecute("let g:copy = deepcopy(g:)", 1)
+
 func! incnormal#enter()
-  " TESTING, later use code below return
-  let g:active = v:true
-  return 
-  let g:lastenter = deepcopy(v:event)
+  "let g:lastenter = deepcopy(v:event)
   call add(g:s_state_save, get(g:, "Nvim_color_cmdline", 0))
-  if v:event.level == 0 && v:event.kind == ":"
+  if v:event.level == 1 && v:event.kind == ":"
     let g:Nvim_color_cmdline = "incnormal#callback"
-    let g:active = v:true
-    call incnormal#start()
+    let g:s_active = v:true
   else
     if has_key(g:, "Nvim_color_cmdline")
       call remove(g:, "Nvim_color_cmdline")
@@ -48,23 +56,26 @@ func! incnormal#enter()
 endfunc
 
 func! incnormal#leave()
-  if g:Nvim_color_cmdline == "incnormal#callback"
+  if get(g:,"Nvim_color_cmdline",0) == "incnormal#callback"
     call Fakexecute("call incnormal#stop()", 1)
   end
 
-  return 0
   let oldstate = remove(g:s_state_save, -1)
   let g:Nvim_color_cmdline = oldstate
   if oldstate == 0
     call remove(g:, "Nvim_color_cmdline")
   elseif oldstate == "incnormal#callback"
-    let g:active = v:true
+    let g:s_active = v:true
   end
 endfunc
 
 func! incnormal#start()
   let oldwin = nvim_get_current_win()
   2new
+  " TODO: reuse buffer
+  set buftype=nofile
+  set nobuflisted
+  file [incnormal]
   let g:s_win = nvim_get_current_win()
   let g:s_buf = nvim_get_current_buf()
   call nvim_set_current_win(oldwin)
@@ -72,6 +83,8 @@ func! incnormal#start()
 endfunc
 
 func! incnormal#stop()
+  let g:s_active = v:false
+  " TODO: save and restore window layout
   if g:s_win != -1
     let oldwin = nvim_get_current_win()
     call nvim_set_current_win(g:s_win)
@@ -83,24 +96,36 @@ func! incnormal#stop()
 
 endfunc
 
+let g:s_src_id = nvim_buf_add_highlight(0, 0, "", 0,0,0)
+
 func! incnormal#doit()
+  let g:s_cursors = []
   let tick = b:changedtick
   let cur = ""
   if g:s_suspended
     let status = "SUSPENDED"
   else
     let cur = s:saveCur()
-    execute g:s_cmdline
+    execute g:s_cmdline."\<Plug>(incnormal-cursor)"
     let status = "N"
     if b:changedtick != tick
       let status = "Y"
     endif
   endif
   call nvim_buf_set_lines(g:s_buf,0,-1,v:true,[status])
+
+  if len(g:s_cursors)
+    for c in g:s_cursors
+      call nvim_buf_add_highlight(0, g:s_src_id, "Error", c[1]-1, c[2]-1, c[2])
+    endfor
+  endif
   redraw!
   if b:changedtick != tick
     undo
   endif
+  if len(g:s_cursors)
+    call nvim_buf_clear_highlight(0, g:s_src_id, 0, -1)
+  end
   execute cur
 endfunc
 
@@ -130,7 +155,7 @@ endfunc
 
 func! incnormal#timer(timerid)
   let g:s_scheduled = v:false
-  if g:active && incnormal#checkcmd()
+  if g:s_active && incnormal#checkcmd()
     if g:s_win == -1
       call incnormal#start()
     end
@@ -138,7 +163,6 @@ func! incnormal#timer(timerid)
   end
 endfunc
 
-let g:Nvim_color_cmdline = "incnormal#callback"
 
 
 augroup IncNormal
