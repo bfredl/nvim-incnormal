@@ -2,6 +2,33 @@ let g:s_state_save = []
 let g:active = v:false
 let g:s_buf = -1
 let g:s_win = -1
+let g:s_suspended = 0
+
+" fake exectue in an expr mapping, emulates #4419
+func! Fakexecute(cmd,unsandbox)
+  if a:unsandbox
+    " 'Note how execute() is used to execute an Ex command.  That's ugly though.'
+    call timer_start(0,{x -> execute(a:cmd)})
+  else
+    exec a:cmd
+  endif
+  return ''
+endfunc
+
+function! s:saveCur()
+    " from matchit
+    let restore_cursor = virtcol(".") . "|"
+    normal! g0
+    let restore_cursor = line(".") . "G" .  virtcol(".") . "|zs" . restore_cursor
+    normal! H
+    let restore_cursor = "normal!" . line(".") . "Gzt" . restore_cursor
+    execute restore_cursor
+    return restore_cursor
+endfunction
+
+
+cnoremap <expr> <Plug>(incnormal-suspend) Fakexecute("let g:s_suspended = !g:s_suspended", 0)
+cmap <F4> <Plug>(incnormal-suspend)
 
 func! incnormal#enter()
   " TESTING, later use code below return
@@ -10,7 +37,7 @@ func! incnormal#enter()
   let g:lastenter = deepcopy(v:event)
   call add(g:s_state_save, get(g:, "Nvim_color_cmdline", 0))
   if v:event.level == 0 && v:event.kind == ":"
-    let g:Nvim_color_cmdline = "inccomand#callback"
+    let g:Nvim_color_cmdline = "incnormal#callback"
     let g:active = v:true
     call incnormal#start()
   else
@@ -21,8 +48,8 @@ func! incnormal#enter()
 endfunc
 
 func! incnormal#leave()
-  if g:Nvim_color_cmdline == "inccomand#callback"
-    call incnormal#stop()
+  if g:Nvim_color_cmdline == "incnormal#callback"
+    call Fakexecute("call incnormal#stop()", 1)
   end
 
   return 0
@@ -39,21 +66,42 @@ func! incnormal#start()
   let oldwin = nvim_get_current_win()
   2new
   let g:s_win = nvim_get_current_win()
-  let g:s_buf= nvim_get_current_win()
+  let g:s_buf = nvim_get_current_buf()
   call nvim_set_current_win(oldwin)
   redraw!
 endfunc
 
+func! incnormal#stop()
+  if g:s_win != -1
+    let oldwin = nvim_get_current_win()
+    call nvim_set_current_win(g:s_win)
+    quit!
+    call nvim_set_current_win(oldwin)
+    redraw!
+    let g:s_win = -1
+  endif
+
+endfunc
+
 func! incnormal#doit()
   let tick = b:changedtick
-  execute g:s_cmdline
-  redraw!
-  let status = "N"
-  if b:changedtick != tick
-    undo
-    let status = "Y"
+  let cur = ""
+  if g:s_suspended
+    let status = "SUSPENDED"
+  else
+    let cur = s:saveCur()
+    execute g:s_cmdline
+    let status = "N"
+    if b:changedtick != tick
+      let status = "Y"
+    endif
   endif
   call nvim_buf_set_lines(g:s_buf,0,-1,v:true,[status])
+  redraw!
+  if b:changedtick != tick
+    undo
+  endif
+  execute cur
 endfunc
 
 let g:s_scheduled = v:false
@@ -72,21 +120,21 @@ func! incnormal#callback(cmdline)
     return []
 endfunc
 
-let g:a = '\v^[^a-zA-Z]+norma '
-
 func! incnormal#checkcmd()
   " TODO: handle named marks
-  let match = match(g:s_cmdline, '\v^[^a-zA-Z]*norma ')
+  " TODO: g/blargh/normal
+  " TODO: also incsearch for g/blarg
+  let match = match(g:s_cmdline, '\v^[^a-zA-Z]*norma!? .')
   return match >= 0
 endfunc
 
 func! incnormal#timer(timerid)
   let g:s_scheduled = v:false
   if g:active && incnormal#checkcmd()
-      if g:s_win == -1
-          call incnormal#start()
-      end
-      call incnormal#doit()
+    if g:s_win == -1
+      call incnormal#start()
+    end
+    call incnormal#doit()
   end
 endfunc
 
