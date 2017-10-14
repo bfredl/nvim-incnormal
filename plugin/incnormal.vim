@@ -27,7 +27,6 @@ function! s:saveCur()
     return restore_cursor
 endfunction
 
-
 cnoremap <expr> <Plug>(incnormal-suspend) Fakexecute("let g:s_suspended = !g:s_suspended", 0)
 cmap <F4> <Plug>(incnormal-suspend)
 
@@ -163,11 +162,8 @@ func! incnormal#timer(timerid)
   end
 endfunc
 
-
-
 augroup IncNormal
   au!
   au CmdlineEnter * call incnormal#enter()
   au CmdlineLeave * call incnormal#leave()
 augroup END
-
