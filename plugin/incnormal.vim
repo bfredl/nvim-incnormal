@@ -44,7 +44,7 @@ cnoremap <expr> <f5> Fakexecute("let g:copy = deepcopy(g:)", 1)
 func! incnormal#enter()
   "let g:lastenter = deepcopy(v:event)
   call add(g:s_state_save, get(g:, "Nvim_color_cmdline", 0))
-  if v:event.level == 1 && v:event.kind == ":"
+  if v:event.cmdlevel == 1 && v:event.cmdtype == ":"
     let g:Nvim_color_cmdline = "incnormal#callback"
     let g:s_active = v:true
   else
