@@ -115,7 +115,7 @@ func! incnormal#doit()
 
   if len(g:s_cursors)
     for c in g:s_cursors
-      call nvim_buf_add_highlight(0, g:s_src_id, "Error", c[1]-1, c[2]-1, c[2])
+      call nvim_buf_add_highlight(0, g:s_src_id, "IncCursor", c[1]-1, c[2]-1, c[2])
     endfor
   endif
   redraw!
@@ -161,6 +161,8 @@ func! incnormal#timer(timerid)
     call incnormal#doit()
   end
 endfunc
+
+hi IncCursor cterm=reverse gui=reverse
 
 augroup IncNormal
   au!
